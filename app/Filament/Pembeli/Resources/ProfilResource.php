@@ -57,11 +57,9 @@ class ProfilResource extends Resource
                     return auth()->id();
                 })->required(),
                 
-            Section::make('Informasi Status')
-                ->description('Status persetujuan profil Anda')
+            Section::make('Informasi Status')->description('Status persetujuan profil Anda')
                 ->schema([
-                    Placeholder::make('status_info')
-                        ->label('')
+                    Placeholder::make('status_info')->label('')
                         ->content(function ($record) {
                             if (!$record) {
                                 return 'Profil belum dibuat. Setelah membuat profil, admin akan meninjau dan menyetujui profil Anda.';
@@ -70,16 +68,20 @@ class ProfilResource extends Resource
                             return match($record->status) {
                                 'pending' => '⏳ Status: Menunggu Persetujuan Admin. Anda belum dapat melakukan transaksi.',
                                 'accepted' => '✅ Status: Disetujui. Anda dapat melakukan transaksi dengan kuota ' . $record->kuota . ' tabung per bulan.',
-                                'rejected' => '❌ Status: Ditolak. Hubungi admin untuk informasi lebih lanjut.',
+                                'rejected' => '❌ Status: Ditolak. Silakan perbaiki data dan kirim ulang untuk ditinjau kembali.',
+                                'resubmitted' => '🔄 Status: Dikirim Ulang. Menunggu persetujuan admin setelah perbaikan.',
                                 default => 'Status tidak diketahui.'
                             };
+                        })->columnSpanFull(),
+                    Placeholder::make('rejection_note_display')->label('Catatan Admin')
+                        ->content(function ($record) {
+                            return $record?->rejection_note ?? 'Tidak ada catatan khusus.';
                         })
-                        ->columnSpanFull(),
-                ])
-                ->visible(fn ($record) => $record !== null),
-                
-            Section::make('Informasi Pribadi')
-                ->description('Lengkapi data pribadi Anda')
+                        ->visible(function ($record) {
+                            return $record && in_array($record->status, ['rejected', 'resubmitted']);
+                        })->columnSpanFull(),
+                ])->visible(fn ($record) => $record !== null),
+            Section::make('Informasi Pribadi')->description('Lengkapi data pribadi Anda')
                 ->schema([
                     Grid::make(2)
                         ->schema([
@@ -109,8 +111,7 @@ class ProfilResource extends Resource
                         ]),
                 ]),
                 
-            Section::make('Alamat')
-                ->description('Informasi alamat lengkap')
+            Section::make('Alamat')->description('Informasi alamat lengkap')
                 ->schema([
                     Grid::make(2)
                         ->schema([
@@ -168,9 +169,7 @@ class ProfilResource extends Resource
                             TextInput::make('alamat')->label('Alamat Lengkap')->required()->columnSpanFull()->placeholder('Jalan, RT/RW, Kelurahan, dll')->helperText('Masukkan alamat lengkap termasuk jalan, RT/RW, kelurahan'),
                         ]),
                 ]),
-                
-            Section::make('Informasi Pekerjaan & Ekonomi')
-                ->description('Data pekerjaan dan penghasilan')
+            Section::make('Informasi Pekerjaan & Ekonomi')->description('Data pekerjaan dan penghasilan')
                 ->schema([
                     Grid::make(2)
                         ->schema([
@@ -180,18 +179,12 @@ class ProfilResource extends Resource
                                     'UMKM' => 'UMKM',
                                     'Swasta' => 'Swasta',
                                     'Negeri' => 'Negeri',
-                                ])
-                                ->required()
-                                ->native(false)
-                                ->label('Pekerjaan')
-                                ->live(),
+                                ])->required()->native(false)->label('Pekerjaan')->live(),
                             Select::make('gaji')
                                 ->options([
                                     '< 3 juta' => '< 3 juta',
                                     '> 3 juta' => '> 3 juta',
-                                ])
-                                ->required()
-                                ->native(false)
+                                ])->required()->native(false)
                                 ->label(function (callable $get) {
                                     $pekerjaan = $get('pekerjaan');
                                     if ($pekerjaan === 'UMKM') {
@@ -199,8 +192,7 @@ class ProfilResource extends Resource
                                     } else {
                                         return 'Kisaran Pendapatan per Bulan';
                                     }
-                                })
-                                ->live()
+                                })->live()
                                 ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                     $pekerjaan = $get('pekerjaan');
                                     if ($pekerjaan === 'UMKM') {
@@ -221,63 +213,27 @@ class ProfilResource extends Resource
                                 }),        
                         ]),
                     Forms\Components\Hidden::make('kuota'),
-                    Forms\Components\Hidden::make('status')->default('pending'),
+                    Forms\Components\Hidden::make('status')
+                        ->default(function ($record) {
+                            if ($record && $record->status === 'rejected') {
+                                return 'resubmitted';
+                            }
+                            return 'pending';
+                        }),
                 ]),
                 
-            Section::make('Upload Dokumen')
-                ->description('Upload dokumen yang diperlukan sesuai dengan jenis pekerjaan')
+            Section::make('Upload Dokumen')->description('Upload dokumen yang diperlukan sesuai dengan jenis pekerjaan')
                 ->schema([
+                    Grid::make(3)
+                        ->schema([
+                            FileUpload::make('foto_ktp')->label('Foto KTP')->image()->directory('profil-pembeli/ktp')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])->helperText('Format: JPG, PNG. Maksimal 2MB'),
+                            FileUpload::make('foto_selfie')->label('Foto Selfie dengan KTP')->image()->directory('profil-pembeli/selfie')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])->helperText('Foto diri sambil memegang KTP. Format: JPG, PNG. Maksimal 2MB'),
+                            FileUpload::make('foto_kk')->label('Foto Kartu Keluarga (KK)')->image()->directory('profil-pembeli/kk')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])->helperText('Format: JPG, PNG. Maksimal 2MB'),
+                        ]),
                     Grid::make(2)
                         ->schema([
-                            FileUpload::make('foto_ktp')
-                                ->label('Foto KTP')
-                                ->image()
-                                ->directory('profil-pembeli/ktp')
-                                ->required()
-                                ->maxSize(2048)
-                                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])
-                                ->helperText('Format: JPG, PNG. Maksimal 2MB'),
-                            FileUpload::make('foto_selfie')
-                                ->label('Foto Selfie dengan KTP')
-                                ->image()
-                                ->directory('profil-pembeli/selfie')
-                                ->required()
-                                ->maxSize(2048)
-                                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])
-                                ->helperText('Foto diri sambil memegang KTP. Format: JPG, PNG. Maksimal 2MB'),
-                        ]),
-                    Grid::make(1)
-                        ->schema([
-                            FileUpload::make('foto_kk')
-                                ->label('Foto Kartu Keluarga (KK)')
-                                ->image()
-                                ->directory('profil-pembeli/kk')
-                                ->required()
-                                ->maxSize(2048)
-                                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])
-                                ->helperText('Format: JPG, PNG. Maksimal 2MB'),
-                        ]),
-                    
-                    Grid::make(2)
-                        ->schema([
-                            FileUpload::make('foto_usaha')
-                                ->label('Foto Usaha')
-                                ->image()
-                                ->directory('profil-pembeli/usaha')
-                                ->maxSize(2048)
-                                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])
-                                ->helperText('Foto tempat usaha/toko. Format: JPG, PNG. Maksimal 2MB')
-                                ->required(fn (callable $get) => $get('pekerjaan') === 'UMKM')
-                                ->visible(fn (callable $get) => $get('pekerjaan') === 'UMKM'),
-                            FileUpload::make('foto_izin')
-                                ->label('Foto Izin Usaha')
-                                ->image()
-                                ->directory('profil-pembeli/izin')
-                                ->maxSize(2048)
-                                ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])
-                                ->helperText('Foto surat izin usaha/SIUP/TDP. Format: JPG, PNG. Maksimal 2MB')
-                                ->required(fn (callable $get) => $get('pekerjaan') === 'UMKM')
-                                ->visible(fn (callable $get) => $get('pekerjaan') === 'UMKM'),
+                            FileUpload::make('foto_usaha')->label('Foto Usaha')->image()->directory('profil-pembeli/usaha')->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])->helperText('Foto tempat usaha/toko. Format: JPG, PNG. Maksimal 2MB')->required(fn (callable $get) => $get('pekerjaan') === 'UMKM')->visible(fn (callable $get) => $get('pekerjaan') === 'UMKM'),
+                            FileUpload::make('foto_izin')->label('Foto Izin Usaha')->image()->directory('profil-pembeli/izin')->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg'])->helperText('Foto surat izin usaha/SIUP/TDP. Format: JPG, PNG. Maksimal 2MB')->required(fn (callable $get) => $get('pekerjaan') === 'UMKM')->visible(fn (callable $get) => $get('pekerjaan') === 'UMKM'),
                         ]),
                 ]),
         ]);
@@ -287,43 +243,28 @@ class ProfilResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('user.name')
-                    ->label('Nama Lengkap')
-                    ->searchable()
-                    ->sortable(),
-                TextColumn::make('nik')
-                    ->label('NIK')
-                    ->searchable()
+                TextColumn::make('user.name')->label('Nama Lengkap')->searchable()->sortable(),
+                TextColumn::make('nik')->label('NIK')->searchable()
                     ->formatStateUsing(fn (string $state): string => 
                         substr($state, 0, 4) . '****' . substr($state, -4)
                     ),
-                TextColumn::make('nama_provinsi')
-                    ->label('Provinsi')
-                    ->sortable(),
-                TextColumn::make('nama_kota_kabupaten')
-                    ->label('Kota/Kabupaten')
-                    ->sortable(),
-                TextColumn::make('pekerjaan')
-                    ->label('Pekerjaan')
-                    ->badge()
-                    ->color('info'),
-                TextColumn::make('gaji')
-                    ->label('Penghasilan')
-                    ->badge()
-                    ->color('success'),
-                TextColumn::make('status')
-                    ->label('Status')
-                    ->badge()
+                TextColumn::make('nama_provinsi')->label('Provinsi')->sortable(),
+                TextColumn::make('nama_kota_kabupaten')->label('Kota/Kabupaten')->sortable(),
+                TextColumn::make('pekerjaan')->label('Pekerjaan')->badge()->color('info'),
+                TextColumn::make('gaji')->label('Penghasilan')->badge()->color('success'),
+                TextColumn::make('status')->label('Status')->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'pending' => 'warning',
                         'accepted' => 'success',
                         'rejected' => 'danger',
+                        'resubmitted' => 'info',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state): string => match ($state) {
                         'pending' => 'Menunggu',
                         'accepted' => 'Disetujui',
                         'rejected' => 'Ditolak',
+                        'resubmitted' => 'Dikirim Ulang',
                         default => $state,
                     }),
             ])
@@ -358,7 +299,8 @@ class ProfilResource extends Resource
 
     public static function canEdit($record): bool
     {
-        return $record->user_id === auth()->id() && in_array($record->status, ['pending', 'accepted']);
+        return $record->user_id === auth()->id() && 
+               in_array($record->status, ['pending', 'accepted', 'rejected']);
     }
 
     public static function canView($record): bool
@@ -390,6 +332,9 @@ class ProfilResource extends Resource
         if ($pembeli->status === 'rejected') {
             return '❌';
         }
+        if ($pembeli->status === 'resubmitted') {
+            return '🔄';
+        }
         return null;
     }
 
@@ -403,6 +348,7 @@ class ProfilResource extends Resource
         return match($pembeli->status) {
             'pending' => 'warning',
             'rejected' => 'danger',
+            'resubmitted' => 'info',
             default => null
         };
     }
@@ -416,7 +362,8 @@ class ProfilResource extends Resource
         }
         return match($pembeli->status) {
             'pending' => 'Profil menunggu persetujuan admin - Belum bisa transaksi',
-            'rejected' => 'Profil ditolak - Hubungi admin untuk informasi',
+            'rejected' => 'Profil ditolak - Silakan edit dan kirim ulang',
+            'resubmitted' => 'Profil dikirim ulang - Menunggu review admin',
             'accepted' => "Profil disetujui - Kuota: {$pembeli->kuota} transaksi",
             default => null
         };
