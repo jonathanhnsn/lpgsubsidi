@@ -6,6 +6,7 @@ use App\Filament\Resources\KurirResource\Pages;
 use App\Filament\Resources\KurirResource\RelationManagers;
 use App\Models\Kurir;
 use App\Models\User;
+use App\Services\WilayahApiService;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Form;
@@ -30,170 +31,6 @@ class KurirResource extends Resource
     protected static ?string $navigationLabel = 'Kurir';
     protected static ?string $pluralModelLabel = 'Kurir';
 
-    protected static function getProvinsiOptions(): array
-    {
-        return Cache::remember('api_provinces', 3600, function () {
-            try {
-                $response = Http::timeout(5)->get('https://emsifa.github.io/api-wilayah-indonesia/api/provinces.json');
-                if ($response->successful()) {
-                    $provinces = $response->json();
-                    return collect($provinces)->pluck('name', 'id')->toArray();
-                }
-            } catch (\Exception $e) {
-                \Log::error('Error fetching provinces: ' . $e->getMessage());
-            }
-            return [];
-        });
-    }
-
-    protected static function getKabupatenOptions($provinceId): array
-    {
-        if (empty($provinceId)) {
-            return [];
-        }
-        return Cache::remember("api_regencies_{$provinceId}", 3600, function () use ($provinceId) {
-            try {
-                $response = Http::timeout(5)->get("https://emsifa.github.io/api-wilayah-indonesia/api/regencies/{$provinceId}.json");  
-                if ($response->successful()) {
-                    $regencies = $response->json();
-                    return collect($regencies)->pluck('name', 'id')->toArray();
-                }
-            } catch (\Exception $e) {
-                \Log::error("Error fetching regencies for province {$provinceId}: " . $e->getMessage());
-            } 
-            return [];
-        });
-    }
-
-    protected static function getKecamatanOptions($regencyId): array
-    {
-        if (empty($regencyId)) {
-            return [];
-        }
-        return Cache::remember("api_districts_{$regencyId}", 3600, function () use ($regencyId) {
-            try {
-                $response = Http::timeout(5)->get("https://emsifa.github.io/api-wilayah-indonesia/api/districts/{$regencyId}.json");    
-                if ($response->successful()) {
-                    $districts = $response->json();
-                    return collect($districts)->pluck('name', 'id')->toArray();
-                }
-            } catch (\Exception $e) {
-                \Log::error("Error fetching districts for regency {$regencyId}: " . $e->getMessage());
-            }
-            return [];
-        });
-    }
-
-    protected static function getWilayahFromNik($nik): array
-    {
-        if (empty($nik) || strlen($nik) < 6) {
-            return [
-                'provinsi_id' => '',
-                'kabupaten_id' => '',
-                'kecamatan_id' => '',
-                'nama_provinsi' => '',
-                'nama_kabupaten' => '',
-                'nama_kecamatan' => ''
-            ];
-        }
-        $nikPrefix = substr($nik, 0, 6);
-        return Cache::remember("wilayah_nik_{$nikPrefix}", 1800, function () use ($nik, $nikPrefix) {
-            $kodeProvinsi = substr($nik, 0, 2);
-            $kodeKabupaten = substr($nik, 0, 4);
-            $kodeKecamatan = substr($nik, 0, 6);
-            try {
-                $responses = Http::pool(fn ($pool) => [
-                    $pool->timeout(5)->get('https://emsifa.github.io/api-wilayah-indonesia/api/provinces.json'),
-                ]);
-                $provinsiId = '';
-                $provinsiName = '';
-                if ($responses[0]->successful()) {
-                    $provinces = collect($responses[0]->json());
-                    $provinsi = $provinces->firstWhere('id', $kodeProvinsi);
-                    if ($provinsi) {
-                        $provinsiId = $provinsi['id'];
-                        $provinsiName = $provinsi['name'];
-                    }
-                }
-                if (!$provinsiId) {
-                    return [
-                        'provinsi_id' => '',
-                        'kabupaten_id' => '',
-                        'kecamatan_id' => '',
-                        'nama_provinsi' => '',
-                        'nama_kabupaten' => '',
-                        'nama_kecamatan' => ''
-                    ];
-                }
-                $kabupatenResponse = Http::timeout(5)->get("https://emsifa.github.io/api-wilayah-indonesia/api/regencies/{$provinsiId}.json");
-                $kabupatenId = '';
-                $kabupatenName = '';
-                if ($kabupatenResponse->successful()) {
-                    $regencies = collect($kabupatenResponse->json());
-                    $kabupaten = $regencies->firstWhere('id', $kodeKabupaten);
-                    if ($kabupaten) {
-                        $kabupatenId = $kabupaten['id'];
-                        $kabupatenName = $kabupaten['name'];
-                    }
-                }
-                if (!$kabupatenId) {
-                    return [
-                        'provinsi_id' => $provinsiId,
-                        'kabupaten_id' => '',
-                        'kecamatan_id' => '',
-                        'nama_provinsi' => $provinsiName,
-                        'nama_kabupaten' => '',
-                        'nama_kecamatan' => ''
-                    ];
-                }
-                $kecamatanResponse = Http::timeout(5)->get("https://emsifa.github.io/api-wilayah-indonesia/api/districts/{$kabupatenId}.json");
-                $kecamatanId = '';
-                $kecamatanName = '';
-                if ($kecamatanResponse->successful()) {
-                    $districts = collect($kecamatanResponse->json());
-                    $kecamatan = $districts->first(function ($district) use ($kodeKecamatan) {
-                        return str_starts_with($district['id'], $kodeKecamatan);
-                    });
-                    if (!$kecamatan) {
-                        $kecamatan = $districts->first(function ($district) use ($kodeKecamatan) {
-                            return str_contains($district['id'], $kodeKecamatan);
-                        });
-                    }
-                    if (!$kecamatan && $districts->isNotEmpty()) {
-                        $kecamatan = $districts->first();
-                    }
-                    if ($kecamatan) {
-                        $kecamatanId = $kecamatan['id'];
-                        $kecamatanName = $kecamatan['name'];
-                    }
-                }
-                return [
-                    'provinsi_id' => $provinsiId,
-                    'kabupaten_id' => $kabupatenId,
-                    'kecamatan_id' => $kecamatanId,
-                    'nama_provinsi' => $provinsiName,
-                    'nama_kabupaten' => $kabupatenName,
-                    'nama_kecamatan' => $kecamatanName
-                ];
-            } catch (\Exception $e) {
-                \Log::error('Error fetching wilayah data from NIK: ' . $e->getMessage(), [
-                    'nik' => $nik,
-                    'kode_provinsi' => $kodeProvinsi,
-                    'kode_kabupaten' => $kodeKabupaten,
-                    'kode_kecamatan' => $kodeKecamatan
-                ]);
-                return [
-                    'provinsi_id' => '',
-                    'kabupaten_id' => '',
-                    'kecamatan_id' => '',
-                    'nama_provinsi' => '',
-                    'nama_kabupaten' => '',
-                    'nama_kecamatan' => ''
-                ];
-            }
-        });
-    }
-
     public static function form(Form $form): Form
     {
         return $form
@@ -209,7 +46,7 @@ class KurirResource extends Resource
                             $set('nama_kota_kabupaten', '');
                             $set('nama_kecamatan', '');
                         } else if (strlen($state) >= 6) {
-                            $wilayahData = static::getWilayahFromNik($state);
+                            $wilayahData = WilayahApiService::getWilayahFromNik($state);
                             $set('provinsi_id', $wilayahData['provinsi_id']);
                             $set('kabupaten_id', $wilayahData['kabupaten_id']);
                             $set('kecamatan_id', $wilayahData['kecamatan_id']);
@@ -219,54 +56,54 @@ class KurirResource extends Resource
                         }
                     }),
                 TextInput::make('no_telp')->label('Nomor Telepon')->tel()->required()->maxLength(15),
-                Select::make('nama_provinsi')->label('Provinsi')->options(fn () => static::getProvinsiOptions())->searchable()->preload()->live()
-                ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                    $set('nama_kota_kabupaten', '');
-                    $set('nama_kecamatan', '');
-                    $set('kabupaten_id', '');
-                    $set('kecamatan_id', '');
-                    $provinsiOptions = static::getProvinsiOptions();
-                    $provinsiId = array_search($state, $provinsiOptions);
-                    $set('provinsi_id', $provinsiId);
-                }),
-                Forms\Components\Hidden::make('provinsi_id'),
+                Select::make('nama_provinsi')->label('Provinsi')->options(fn () => WilayahApiService::getProvinsiOptions())->searchable()->preload()->live()
+                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                        $set('nama_kota_kabupaten', '');
+                        $set('nama_kecamatan', '');
+                        $set('kabupaten_id', '');
+                        $set('kecamatan_id', '');
+                        $provinsiOptions = WilayahApiService::getProvinsiOptions();
+                        $provinsiId = array_search($state, $provinsiOptions);
+                        $set('provinsi_id', $provinsiId);
+                    }),
+                Forms\Components\Hidden::make('provinsi_id')->default(''),
                 Select::make('nama_kota_kabupaten')->label('Kota/Kabupaten')
                     ->options(function (callable $get) {
                         $provinsiId = $get('provinsi_id');
                         if (!$provinsiId) {
                             $namaProvinsi = $get('nama_provinsi');
-                            $provinsiOptions = static::getProvinsiOptions();
+                            $provinsiOptions = WilayahApiService::getProvinsiOptions();
                             $provinsiId = array_search($namaProvinsi, $provinsiOptions);
                         }
-                        return static::getKabupatenOptions($provinsiId);
+                        return WilayahApiService::getKabupatenOptions($provinsiId);
                     })->searchable()->preload()->live()
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                         $set('nama_kecamatan', '');
                         $set('kecamatan_id', '');
                         $provinsiId = $get('provinsi_id');
-                        $kabupatenOptions = static::getKabupatenOptions($provinsiId);
+                        $kabupatenOptions = WilayahApiService::getKabupatenOptions($provinsiId);
                         $kabupatenId = array_search($state, $kabupatenOptions);
                         $set('kabupaten_id', $kabupatenId);
                     }),
-                Forms\Components\Hidden::make('kabupaten_id'),
+                Forms\Components\Hidden::make('kabupaten_id')->default(''),
                 Select::make('nama_kecamatan')->label('Kecamatan')
                     ->options(function (callable $get) {
                         $kabupatenId = $get('kabupaten_id');
                         if (!$kabupatenId) {
                             $namaKabupaten = $get('nama_kota_kabupaten');
                             $provinsiId = $get('provinsi_id');
-                            $kabupatenOptions = static::getKabupatenOptions($provinsiId);
+                            $kabupatenOptions = WilayahApiService::getKabupatenOptions($provinsiId);
                             $kabupatenId = array_search($namaKabupaten, $kabupatenOptions);
                         }
-                        return static::getKecamatanOptions($kabupatenId);
+                        return WilayahApiService::getKecamatanOptions($kabupatenId);
                     })->searchable()->preload()->live()
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                         $kabupatenId = $get('kabupaten_id');
-                        $kecamatanOptions = static::getKecamatanOptions($kabupatenId);
+                        $kecamatanOptions = WilayahApiService::getKecamatanOptions($kabupatenId);
                         $kecamatanId = array_search($state, $kecamatanOptions);
                         $set('kecamatan_id', $kecamatanId);
                     }),  
-                Forms\Components\Hidden::make('kecamatan_id'),
+                Forms\Components\Hidden::make('kecamatan_id')->default(''),
                 Forms\Components\Textarea::make('alamat')->label('Alamat Lengkap')->required()->rows(3),
                 FileUpload::make('foto_ktp')->label('Foto KTP')->image()->directory('profil-kurir/ktp')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg']),
                 FileUpload::make('foto_sim')->label('Foto SIM')->image()->directory('profil-kurir/sim')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg']),
