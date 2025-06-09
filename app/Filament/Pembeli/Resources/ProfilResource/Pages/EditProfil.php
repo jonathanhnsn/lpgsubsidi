@@ -53,17 +53,32 @@ class EditProfil extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        // Pastikan user_id tidak berubah
         $data['user_id'] = $this->record->user_id;
+        
+        // Jika profil sebelumnya ditolak dan sekarang sedang diedit,
+        // ubah status menjadi pending untuk ditinjau ulang
+        if ($this->record->status === 'rejected') {
+            $data['status'] = 'pending';
+            // Tidak menghapus rejection_note, tetap menyimpannya untuk referensi admin
+        }
         
         return $data;
     }
 
     protected function getSavedNotification(): ?Notification
     {
+        $message = 'Perubahan profil Anda telah berhasil disimpan.';
+        
+        // Jika status berubah dari rejected ke pending, beri informasi tambahan
+        if ($this->record->status === 'rejected') {
+            $message .= ' Status profil telah diubah menjadi "Menunggu Persetujuan" dan akan ditinjau ulang oleh admin.';
+        }
+        
         return Notification::make()
             ->success()
             ->title('Profil Berhasil Diperbarui')
-            ->body('Perubahan profil Anda telah berhasil disimpan.');
+            ->body($message);
     }
 
     protected function getHeaderActions(): array

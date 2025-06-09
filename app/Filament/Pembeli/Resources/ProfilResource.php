@@ -31,6 +31,7 @@ class ProfilResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-user-circle';
     protected static ?string $navigationLabel = 'Profil Saya';
     protected static ?string $modelLabel = 'Profil';
+    
     protected static function getAuthenticatedPembeli(): ?Pembeli
     {
         $user = auth()->user();
@@ -39,6 +40,7 @@ class ProfilResource extends Resource
         }
         return Pembeli::where('user_id', $user->id)->first();
     }
+    
     public static function getEloquentQuery(): Builder
     {
         $user = auth()->user();
@@ -62,24 +64,35 @@ class ProfilResource extends Resource
                     Placeholder::make('status_info')->label('')
                         ->content(function ($record) {
                             if (!$record) {
-                                return 'Profil belum dibuat. Setelah membuat profil, admin akan meninjau dan menyetujui profil Anda.';
+                                return '📝 Profil belum dibuat. Setelah membuat profil, admin akan meninjau dan menyetujui profil Anda.';
                             }
-                            
                             return match($record->status) {
                                 'pending' => '⏳ Status: Menunggu Persetujuan Admin. Anda belum dapat melakukan transaksi.',
                                 'accepted' => '✅ Status: Disetujui. Anda dapat melakukan transaksi dengan kuota ' . $record->kuota . ' tabung per bulan.',
-                                'rejected' => '❌ Status: Ditolak. Silakan perbaiki data dan kirim ulang untuk ditinjau kembali.',
-                                'resubmitted' => '🔄 Status: Dikirim Ulang. Menunggu persetujuan admin setelah perbaikan.',
+                                'rejected' => '❌ Status: Ditolak. Silakan perbaiki data sesuai catatan admin di bawah ini dan simpan kembali untuk ditinjau ulang.',
                                 default => 'Status tidak diketahui.'
                             };
                         })->columnSpanFull(),
-                    Placeholder::make('rejection_note_display')->label('Catatan Admin')
+                    Placeholder::make('rejection_note_display')->label('Catatan Admin untuk Perbaikan')
                         ->content(function ($record) {
-                            return $record?->rejection_note ?? 'Tidak ada catatan khusus.';
+                            if (!$record || !$record->rejection_note) {
+                                return 'Tidak ada catatan khusus dari admin.';
+                            }
+                            return '⚠️ ' . $record->rejection_note;
                         })
                         ->visible(function ($record) {
-                            return $record && in_array($record->status, ['rejected', 'resubmitted']);
-                        })->columnSpanFull(),
+                            return $record && $record->rejection_note && in_array($record->status, ['rejected', 'pending']);
+                        })
+                        ->columnSpanFull()
+                        ->extraAttributes(['class' => 'bg-red-50 border border-red-200 rounded-lg p-4']),
+                        
+                    Placeholder::make('improvement_note')->label('')
+                        ->content('💡 Tip: Setelah Anda memperbaiki data sesuai catatan admin dan menyimpan, status akan berubah menjadi "Menunggu Persetujuan" dan profil akan ditinjau ulang oleh admin.')
+                        ->visible(function ($record) {
+                            return $record && $record->status === 'rejected';
+                        })
+                        ->columnSpanFull()
+                        ->extraAttributes(['class' => 'bg-blue-50 border border-blue-200 rounded-lg p-3']),
                 ])->visible(fn ($record) => $record !== null),
             Section::make('Informasi Pribadi')->description('Lengkapi data pribadi Anda')
                 ->schema([
@@ -110,7 +123,6 @@ class ProfilResource extends Resource
                                 }),
                         ]),
                 ]),
-                
             Section::make('Alamat')->description('Informasi alamat lengkap')
                 ->schema([
                     Grid::make(2)
@@ -215,10 +227,14 @@ class ProfilResource extends Resource
                     Forms\Components\Hidden::make('kuota'),
                     Forms\Components\Hidden::make('status')
                         ->default(function ($record) {
-                            if ($record && $record->status === 'rejected') {
-                                return 'resubmitted';
+                            if (!$record) {
+                                return 'pending';
                             }
-                            return 'pending';
+                            return $record->status;
+                        }),
+                    Forms\Components\Hidden::make('rejection_note')
+                        ->default(function ($record) {
+                            return $record ? $record->rejection_note : null;
                         }),
                 ]),
                 
@@ -257,15 +273,18 @@ class ProfilResource extends Resource
                         'pending' => 'warning',
                         'accepted' => 'success',
                         'rejected' => 'danger',
-                        'resubmitted' => 'info',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state): string => match ($state) {
                         'pending' => 'Menunggu',
                         'accepted' => 'Disetujui',
                         'rejected' => 'Ditolak',
-                        'resubmitted' => 'Dikirim Ulang',
                         default => $state,
+                    })
+                    ->description(function (Pembeli $record): ?string {
+                        return $record->rejection_note && $record->status === 'rejected' 
+                            ? 'Alasan: ' . \Str::limit($record->rejection_note, 50)
+                            : null;
                     }),
             ])
             ->filters([
@@ -332,9 +351,6 @@ class ProfilResource extends Resource
         if ($pembeli->status === 'rejected') {
             return '❌';
         }
-        if ($pembeli->status === 'resubmitted') {
-            return '🔄';
-        }
         return null;
     }
 
@@ -348,7 +364,6 @@ class ProfilResource extends Resource
         return match($pembeli->status) {
             'pending' => 'warning',
             'rejected' => 'danger',
-            'resubmitted' => 'info',
             default => null
         };
     }
@@ -363,7 +378,6 @@ class ProfilResource extends Resource
         return match($pembeli->status) {
             'pending' => 'Profil menunggu persetujuan admin - Belum bisa transaksi',
             'rejected' => 'Profil ditolak - Silakan edit dan kirim ulang',
-            'resubmitted' => 'Profil dikirim ulang - Menunggu review admin',
             'accepted' => "Profil disetujui - Kuota: {$pembeli->kuota} transaksi",
             default => null
         };

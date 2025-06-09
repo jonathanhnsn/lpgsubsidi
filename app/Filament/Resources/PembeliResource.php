@@ -12,6 +12,7 @@ use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -110,10 +111,7 @@ class PembeliResource extends Resource
                         'UMKM' => 'UMKM',
                         'Swasta' => 'Swasta',
                         'Negeri' => 'Negeri',
-                    ])
-                    ->required()
-                    ->native(false)
-                    ->live()
+                    ])->required()->native(false)->live()
                     ->afterStateUpdated(function ($state, callable $set) {
                         $set('gaji', '');
                         $set('kuota', 0);
@@ -141,16 +139,12 @@ class PembeliResource extends Resource
                                     break;
                             }
                         }
-                    })
-                    ->label('Pekerjaan'),
-
+                    })->label('Pekerjaan'),
                 Select::make('gaji')
                     ->options([
                         '< 3 juta' => '< 3 juta',
                         '> 3 juta' => '> 3 juta',
-                    ])
-                    ->required()
-                    ->native(false)
+                    ])->required()->native(false)
                     ->label(function (callable $get) {
                         $pekerjaan = $get('pekerjaan');
                         if ($pekerjaan === 'UMKM') {
@@ -198,6 +192,7 @@ class PembeliResource extends Resource
                         'accepted' => 'Accepted - Disetujui',
                         'rejected' => 'Rejected - Ditolak',
                     ])->required()->default('pending')->label('Status Persetujuan'),
+                Textarea::make('rejection_note')->label('Alasan Penolakan')->placeholder('Masukkan alasan mengapa profil pembeli ini ditolak...')->rows(3)->maxLength(500)->visible(fn (callable $get) => $get('status') === 'rejected')->helperText('Alasan ini akan ditampilkan kepada pembeli untuk perbaikan profil.'),
                 FileUpload::make('foto_ktp')->label('Foto KTP')->image()->directory('profil-pembeli/ktp')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg']),
                 FileUpload::make('foto_selfie')->label('Foto Selfie dengan KTP')->image()->directory('profil-pembeli/selfie')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg']),
                 FileUpload::make('foto_kk')->label('Foto Kartu Keluarga (KK)')->image()->directory('profil-pembeli/kk')->required()->maxSize(2048)->acceptedFileTypes(['image/jpeg', 'image/png', 'image/jpg']),
@@ -238,6 +233,11 @@ class PembeliResource extends Resource
                         'accepted' => 'success',
                         'rejected' => 'danger',
                         default => 'gray',
+                    })
+                    ->description(function (Pembeli $record): ?string {
+                        return $record->rejection_note && $record->status === 'rejected' 
+                            ? 'Alasan: ' . \Str::limit($record->rejection_note, 50)
+                            : null;
                     }),
             ])
             ->filters([
@@ -261,17 +261,9 @@ class PembeliResource extends Resource
                         $kuotaKebijakan = KebijakanKuota::getKuotaPembeli($record->pekerjaan, $record->gaji);
                         if ($kuotaKebijakan) {
                             $record->update(['kuota' => $kuotaKebijakan]);
-                            Notification::make()
-                                ->title('Kuota Berhasil Disinkronkan')
-                                ->body("Kuota {$record->pekerjaan} diperbarui menjadi {$kuotaKebijakan}")
-                                ->success()
-                                ->send();
+                            Notification::make()->title('Kuota Berhasil Disinkronkan')->body("Kuota {$record->pekerjaan} diperbarui menjadi {$kuotaKebijakan}")->success()->send();
                         } else {
-                            Notification::make()
-                                ->title('Tidak Ada Kebijakan Aktif')
-                                ->body("Tidak ditemukan kebijakan aktif untuk {$record->pekerjaan} dengan gaji {$record->gaji}")
-                                ->warning()
-                                ->send();
+                            Notification::make()->title('Tidak Ada Kebijakan Aktif')->body("Tidak ditemukan kebijakan aktif untuk {$record->pekerjaan} dengan gaji {$record->gaji}")->warning()->send();
                         }
                     })
                     ->visible(function (Pembeli $record): bool {
@@ -285,36 +277,26 @@ class PembeliResource extends Resource
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\Action::make('approve')->label('Setujui')->icon('heroicon-o-check-circle')->color('success')->visible(fn (Pembeli $record): bool => $record->status === 'pending')->requiresConfirmation()->modalHeading('Setujui Pembeli')->modalDescription('Apakah Anda yakin ingin menyetujui pembeli ini? Pembeli akan dapat melakukan transaksi.')
                     ->action(function (Pembeli $record) {
-                        $record->update(['status' => 'accepted']);
-                        Notification::make()
-                            ->title('Pembeli Disetujui')
-                            ->body("Pembeli {$record->user->name} telah disetujui dan dapat melakukan transaksi.")
-                            ->success()
-                            ->send();
+                        $record->update([
+                            'status' => 'accepted',
+                            'rejection_note' => null
+                        ]);
+                        Notification::make()->title('Pembeli Disetujui')->body("Pembeli {$record->user->name} telah disetujui dan dapat melakukan transaksi.")->success()->send();
                     }),
-
-                Tables\Actions\Action::make('reject')
-                    ->label('Tolak')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->visible(fn (Pembeli $record): bool => $record->status !== 'rejected')
-                    ->requiresConfirmation()
-                    ->modalHeading('Tolak Pembeli')
-                    ->modalDescription('Apakah Anda yakin ingin menolak pembeli ini? Pembeli tidak akan dapat melakukan transaksi.')
-                    ->action(function (Pembeli $record) {
-                        $record->update(['status' => 'rejected']);
-                        Notification::make()
-                            ->title('Pembeli Ditolak')
-                            ->body("Pembeli {$record->user->name} telah ditolak dan tidak dapat melakukan transaksi.")
-                            ->warning()
-                            ->send();
-                    }),
+                Tables\Actions\Action::make('reject')->label('Tolak')->icon('heroicon-o-x-circle')->color('danger')->visible(fn (Pembeli $record): bool => $record->status !== 'rejected')
+                    ->form([
+                        Textarea::make('rejection_note')->label('Alasan Penolakan')->placeholder('Masukkan alasan mengapa profil pembeli ini ditolak...')->required()->rows(4)->maxLength(500)->helperText('Alasan ini akan ditampilkan kepada pembeli untuk perbaikan profil.')->default(fn (Pembeli $record) => $record->rejection_note),
+                    ])
+                    ->action(function (Pembeli $record, array $data) {
+                        $record->update([
+                            'status' => 'rejected',
+                            'rejection_note' => $data['rejection_note']
+                        ]);
+                        Notification::make()->title('Pembeli Ditolak')->body("Pembeli {$record->user->name} telah ditolak dengan alasan: " . \Str::limit($data['rejection_note'], 50))->warning()->send();
+                    })->modalHeading('Tolak Profil Pembeli')->modalDescription('Masukkan alasan penolakan yang akan ditampilkan kepada pembeli.'),
             ])
             ->bulkActions([
-                Tables\Actions\BulkAction::make('sync_all_quota')
-                    ->label('Sinkron Semua Kuota')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('info')
+                Tables\Actions\BulkAction::make('sync_all_quota')->label('Sinkron Semua Kuota')->icon('heroicon-o-arrow-path')->color('info')
                     ->action(function ($records) {
                         $updated = 0;
                         foreach ($records as $record) {
@@ -325,33 +307,18 @@ class PembeliResource extends Resource
                             }
                         }
                         if ($updated > 0) {
-                            Notification::make()
-                                ->title('Kuota Berhasil Disinkronkan')
-                                ->body("{$updated} pembeli berhasil diperbarui kuotanya")
-                                ->success()
-                                ->send();
+                            Notification::make()->title('Kuota Berhasil Disinkronkan')->body("{$updated} pembeli berhasil diperbarui kuotanya")->success()->send();
                         } else {
-                            Notification::make()
-                                ->title('Tidak Ada Perubahan')
-                                ->body('Semua kuota sudah sesuai dengan kebijakan')
-                                ->info()
-                                ->send();
+                            Notification::make()->title('Tidak Ada Perubahan')->body('Semua kuota sudah sesuai dengan kebijakan')->info()->send();
                         }
-                    })
-                    ->requiresConfirmation()
-                    ->modalHeading('Sinkronkan Semua Kuota')
-                    ->modalDescription('Kuota semua pembeli terpilih akan disesuaikan dengan kebijakan aktif yang berlaku.'),
-
-            ])
-            ->defaultSort('created_at', 'desc');
+                    })->requiresConfirmation()->modalHeading('Sinkronkan Semua Kuota')->modalDescription('Kuota semua pembeli terpilih akan disesuaikan dengan kebijakan aktif yang berlaku.'),
+            ])->defaultSort('created_at', 'desc');
     }
-
     public static function getRelations(): array
     {
         return [
         ];
     }
-
     public static function getPages(): array
     {
         return [
@@ -361,18 +328,15 @@ class PembeliResource extends Resource
             'view' => Pages\ViewPembeli::route('/{record}'),
         ];
     }
-
     public static function getNavigationBadge(): ?string
     {
         $pendingCount = static::getModel()::where('status', 'pending')->count();
         return $pendingCount > 0 ? (string) $pendingCount : null;
     }
-
     public static function getNavigationBadgeColor(): ?string
     {
         return 'warning';
     }
-
     public static function getNavigationBadgeTooltip(): ?string
     {
         $pendingCount = static::getModel()::where('status', 'pending')->count();

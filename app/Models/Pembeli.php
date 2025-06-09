@@ -30,11 +30,44 @@ class Pembeli extends Model
         'foto_usaha',
         'foto_izin',
         'status',
+        'rejection_note',
     ];
 
     protected $casts = [
         'kuota' => 'integer',
     ];
+
+    public function resubmitForReview(): bool
+    {
+        if ($this->status === 'rejected') {
+            return $this->update(['status' => 'pending']);
+        }
+        return false;
+    }
+
+    public function canBeEditedByUser(): bool
+    {
+        return in_array($this->status, ['pending', 'accepted', 'rejected']);
+    }
+
+    public function needsReview(): bool
+    {
+        return $this->status === 'pending' && !empty($this->rejection_note);
+    }
+
+    public function getDetailedStatusMessage(): string
+    {
+        $baseMessage = $this->getApprovalStatusMessage();
+        
+        if ($this->status === 'rejected' && $this->rejection_note) {
+            $baseMessage .= "\n\nCatatan dari Admin: " . $this->rejection_note;
+            $baseMessage .= "\n\nSilakan perbaiki data sesuai catatan di atas, kemudian simpan untuk ditinjau ulang.";
+        } elseif ($this->status === 'pending' && $this->rejection_note) {
+            $baseMessage .= "\n\nProfil telah diperbaiki dan sedang menunggu tinjauan ulang dari admin.";
+        }
+        
+        return $baseMessage;
+    }
 
     public function user(): BelongsTo
     {
