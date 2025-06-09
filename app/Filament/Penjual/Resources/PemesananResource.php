@@ -72,7 +72,6 @@ class PemesananResource extends Resource
                         $penjual = static::getAuthenticatedPenjual();
                         return !$penjual || $penjual->status !== 'accepted';
                     }),
-                    
                 Placeholder::make('kuota_info')->label('Informasi Stok & Kuota')
                     ->content(function () {
                         $penjual = static::getAuthenticatedPenjual();
@@ -87,7 +86,6 @@ class PemesananResource extends Resource
                         $penjual = static::getAuthenticatedPenjual();
                         return $penjual && $penjual->status === 'accepted';
                     }),
-
                 Grid::make(2)->schema([
                     TextInput::make('jumlah_pesanan')->label('Jumlah Pesanan')->required()->numeric()->minValue(1)->reactive()
                         ->afterStateUpdated(function ($state, callable $set) {
@@ -128,7 +126,6 @@ class PemesananResource extends Resource
                             $penjual = static::getAuthenticatedPenjual();
                             return $penjual && $penjual->status === 'accepted';
                         }),
-
                     Select::make('metode_pembayaran')->label('Metode Pembayaran')->required()->reactive()
                         ->options([
                             'transfer_bank' => 'Transfer Bank',
@@ -143,7 +140,6 @@ class PemesananResource extends Resource
                             return $penjual && $penjual->status === 'accepted';
                         }),
                 ]),
-
                 Grid::make(2)->schema([
                     TextInput::make('harga_per_tabung')->label('Harga per Tabung')->default(15000)->disabled()->dehydrated(true)->prefix('Rp')->numeric()
                         ->visible(function () {
@@ -156,18 +152,14 @@ class PemesananResource extends Resource
                             return $penjual && $penjual->status === 'accepted';
                         }),
                 ]),
-
                 Placeholder::make('payment_info')->label('Informasi Pembayaran')
                     ->content(function ($get, $record) {
                         if ($record) {
-                            // For edit mode
                             return "Silakan lakukan pembayaran sebesar Rp " . number_format($record->total_harga, 0, ',', '.') . 
                                    " melalui {$record->metode_pembayaran_label}";
                         } else {
-                            // For create mode
                             $metodePembayaran = $get('metode_pembayaran');
                             $totalHarga = $get('total_harga');
-                            
                             if ($metodePembayaran && $totalHarga) {
                                 $metodePembayaranLabel = match($metodePembayaran) {
                                     'transfer_bank' => 'Transfer Bank',
@@ -178,7 +170,6 @@ class PemesananResource extends Resource
                                     'qris' => 'QRIS',
                                     default => $metodePembayaran
                                 };
-                                
                                 return "Silakan lakukan pembayaran sebesar Rp " . number_format($totalHarga, 0, ',', '.') . 
                                        " melalui {$metodePembayaranLabel} dan upload bukti pembayaran di bawah ini.";
                             }
@@ -189,14 +180,7 @@ class PemesananResource extends Resource
                         return ($get('metode_pembayaran') || $record) && 
                                ($get('total_harga') || ($record && $record->total_harga));
                     }),
-
-                FileUpload::make('bukti_pembayaran')
-                    ->label('Upload Bukti Pembayaran')
-                    ->image()
-                    ->maxSize(2048)
-                    ->directory('bukti-pembayaran')
-                    ->visibility('private')
-                    ->columnSpanFull()
+                FileUpload::make('bukti_pembayaran')->label('Upload Bukti Pembayaran')->image()->maxSize(2048)->directory('bukti-pembayaran')->visibility('private')->columnSpanFull()
                     ->afterStateUpdated(function ($state, callable $set) {
                         if ($state) {
                             $set('tanggal_pembayaran', now());
@@ -206,13 +190,11 @@ class PemesananResource extends Resource
                         return ($get('metode_pembayaran') || $record) && 
                                ($get('total_harga') || ($record && $record->total_harga));
                     }),
-
                 Textarea::make('keterangan')->label('Keterangan')->rows(3)->columnSpanFull()
                     ->visible(function () {
                         $penjual = static::getAuthenticatedPenjual();
                         return $penjual && $penjual->status === 'accepted';
                     }),
-
                 DateTimePicker::make('tanggal_pesanan')->label('Tanggal Pesanan')->default(now())->required()->disabled()->dehydrated(true)
                     ->visible(function () {
                         $penjual = static::getAuthenticatedPenjual();
@@ -273,8 +255,7 @@ class PemesananResource extends Resource
                         'dalam_perjalanan' => 'Dalam Perjalanan',
                         'selesai' => 'Selesai',
                     ]),
-                Tables\Filters\SelectFilter::make('metode_pembayaran')
-                    ->label('Metode Pembayaran')
+                Tables\Filters\SelectFilter::make('metode_pembayaran')->label('Metode Pembayaran')
                     ->options([
                         'transfer_bank' => 'Transfer Bank',
                         'dana' => 'DANA',
@@ -283,8 +264,7 @@ class PemesananResource extends Resource
                         'shopee_pay' => 'ShopeePay',
                         'qris' => 'QRIS',
                     ]),
-                Tables\Filters\Filter::make('bukti_pembayaran')
-                    ->label('Status Upload Bukti')
+                Tables\Filters\Filter::make('bukti_pembayaran')->label('Status Upload Bukti')
                     ->form([
                         Select::make('has_bukti')
                             ->options([
@@ -316,7 +296,6 @@ class PemesananResource extends Resource
                                $record->penjual_id === $penjual->id && 
                                $record->status === 'pending';
                     }),
-                    
                 Tables\Actions\DeleteAction::make()
                     ->visible(function (Pemesanan $record): bool {
                         $penjual = static::getAuthenticatedPenjual();
@@ -326,142 +305,51 @@ class PemesananResource extends Resource
                                $record->status === 'pending' &&
                                !$record->bukti_pembayaran;
                     }),
-
-                Action::make('upload_bukti')
-                    ->label('Upload Bukti')
-                    ->icon('heroicon-o-camera')
-                    ->color('warning')
-                    ->visible(function (Pemesanan $record) {
-                        return !$record->bukti_pembayaran || $record->status === 'ditolak';
-                    })
-                    ->form([
-                        Placeholder::make('payment_details')
-                            ->label('Detail Pembayaran')
-                            ->content(fn (Pemesanan $record) => 
-                                "Kode Pesanan: {$record->kode_pesanan}\n" .
-                                "Jumlah: {$record->jumlah_pesanan} tabung\n" .
-                                "Total: Rp " . number_format($record->total_harga, 0, ',', '.') . "\n" .
-                                "Metode: {$record->metode_pembayaran_label}"
-                            ),
-                        FileUpload::make('bukti_pembayaran')
-                            ->label('Upload Bukti Pembayaran')
-                            ->image()
-                            ->required()
-                            ->maxSize(2048)
-                            ->directory('bukti-pembayaran')
-                            ->visibility('private'),
-                    ])
-                    ->action(function (Pemesanan $record, array $data) {
-                        $record->update([
-                            'bukti_pembayaran' => $data['bukti_pembayaran'],
-                            'tanggal_pembayaran' => now(),
-                        ]);
-                        
-                        Notification::make()
-                            ->success()
-                            ->title('Bukti Pembayaran Berhasil Diupload')
-                            ->body('Bukti pembayaran telah diupload.')
-                            ->send();
-                    }),
-                
-                Action::make('konfirmasi_penerimaan')
-                    ->label('Konfirmasi Terima')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
+                Action::make('konfirmasi_penerimaan')->label('Konfirmasi Terima')->icon('heroicon-o-check-circle')->color('success')
                     ->visible(function (Pemesanan $record) {
                         return $record->status === 'selesai' && 
                                (is_null($record->keterangan) || 
                                 !str_contains($record->keterangan, '=== BARANG TELAH DIKONFIRMASI DITERIMA ==='));
-                    })
-                    ->requiresConfirmation()
-                    ->modalHeading('Konfirmasi Penerimaan Barang')
-                    ->modalDescription(fn (Pemesanan $record) => 
-                        "Silakan crosscheck jumlah barang yang Anda terima:\n\n" .
-                        "🔖 Kode pesanan: {$record->kode_pesanan}\n" .
-                        "📦 Jumlah pesanan: {$record->jumlah_pesanan} tabung\n" .
-                        "🚚 Kurir: {$record->kurir->user->name}\n" .
-                        "📅 Tanggal pengiriman selesai: " . ($record->updated_at ? $record->updated_at->format('d/m/Y H:i') : '-') . "\n\n" .
-                        "Apakah jumlah barang yang diterima sesuai dengan pesanan?"
-                    )
-                    ->modalSubmitActionLabel('Ya, Konfirmasi Penerimaan')
-                    ->modalCancelActionLabel('Batal')
+                    })->requiresConfirmation()->modalHeading('Konfirmasi Penerimaan Barang')->modalSubmitActionLabel('Ya, Konfirmasi Penerimaan')->modalCancelActionLabel('Batal')
                     ->form([
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('jumlah_dipesan')
-                                    ->label('Jumlah Dipesan')
-                                    ->default(fn (Pemesanan $record) => $record->jumlah_pesanan)
-                                    ->disabled()
-                                    ->suffix(' tabung'),
-                                    
-                                Forms\Components\TextInput::make('jumlah_diterima')
-                                    ->label('Jumlah Diterima')
-                                    ->required()
-                                    ->numeric()
-                                    ->minValue(0)
-                                    ->default(fn (Pemesanan $record) => $record->jumlah_pesanan)
-                                    ->suffix(' tabung')
-                                    ->helperText('Masukkan jumlah tabung yang benar-benar Anda terima'),
+                                Forms\Components\TextInput::make('jumlah_dipesan')->label('Jumlah Dipesan')->default(fn (Pemesanan $record) => $record->jumlah_pesanan)->disabled()->suffix(' tabung'),
+                                Forms\Components\TextInput::make('jumlah_diterima')->label('Jumlah Diterima')->required()->numeric()->minValue(0)->default(fn (Pemesanan $record) => $record->jumlah_pesanan)->suffix(' tabung')->helperText('Masukkan jumlah tabung yang benar-benar Anda terima'),
                             ]),
-                            
-                        Forms\Components\Textarea::make('catatan_penerimaan')
-                            ->label('Catatan Penerimaan (Opsional)')
-                            ->placeholder('Tambahkan catatan jika ada yang perlu dicatat...')
-                            ->rows(3)
-                            ->columnSpanFull(),
+                        Forms\Components\Textarea::make('catatan_penerimaan')->label('Catatan Penerimaan (Opsional)')->placeholder('Tambahkan catatan jika ada yang perlu dicatat...')->rows(3)->columnSpanFull(),
                     ])
                     ->action(function (Pemesanan $record, array $data) {
                         $jumlahDiterima = (int) $data['jumlah_diterima'];
                         $jumlahDipesan = $record->jumlah_pesanan;
-                        
-                        // Update keterangan dengan informasi konfirmasi
                         $updateData = [
                             'tanggal_dikonfirmasi' => now(),
                         ];
-                        
-                        // Tambahkan catatan konfirmasi ke keterangan
                         $keteranganKonfirmasi = "\n\n=== KONFIRMASI PENERIMAAN ===\n";
                         $keteranganKonfirmasi .= "Kode pesanan: {$record->kode_pesanan}\n";
                         $keteranganKonfirmasi .= "Tanggal: " . now()->format('d/m/Y H:i:s') . "\n";
                         $keteranganKonfirmasi .= "Jumlah dipesan: {$jumlahDipesan} tabung\n";
                         $keteranganKonfirmasi .= "Jumlah diterima: {$jumlahDiterima} tabung\n";
-                        
                         if ($jumlahDiterima !== $jumlahDipesan) {
                             $selisih = $jumlahDiterima - $jumlahDipesan;
                             $keteranganKonfirmasi .= "Selisih: " . ($selisih > 0 ? "+{$selisih}" : $selisih) . " tabung\n";
                         } else {
                             $keteranganKonfirmasi .= "Status: Sesuai pesanan\n";
                         }
-                        
-                        // Tambahkan catatan penerimaan jika ada
                         if (isset($data['catatan_penerimaan']) && !empty($data['catatan_penerimaan'])) {
                             $keteranganKonfirmasi .= "Catatan: " . $data['catatan_penerimaan'] . "\n";
                         }
-                        
                         $keteranganKonfirmasi .= "=== BARANG TELAH DIKONFIRMASI DITERIMA ===";
-                        
                         $keteranganLama = $record->keterangan ?? '';
                         $updateData['keterangan'] = $keteranganLama . $keteranganKonfirmasi;
-                        
                         $record->update($updateData);
-                        
-                        // Update stok penjual berdasarkan jumlah yang benar-benar diterima
                         $record->penjual->increment('stok', $jumlahDiterima);
-                        
-                        // Notifikasi sukses
                         $message = $jumlahDiterima === $jumlahDipesan 
                             ? "Penerimaan barang dikonfirmasi. Stok Anda bertambah {$jumlahDiterima} tabung."
                             : "Penerimaan barang dikonfirmasi dengan selisih. Stok bertambah {$jumlahDiterima} tabung (dari {$jumlahDipesan} tabung yang dipesan).";
-                            
-                        Notification::make()
-                            ->success()
-                            ->title('Konfirmasi Penerimaan Berhasil')
-                            ->body($message)
-                            ->send();
+                        Notification::make()->success()->title('Konfirmasi Penerimaan Berhasil')->body($message)->send();
                     }),
-            ])
-            ->bulkActions([])
-            ->defaultSort('created_at', 'desc')
+            ])->bulkActions([])->defaultSort('created_at', 'desc')
             ->headerActions([
                 Tables\Actions\Action::make('status_info')->label('Info Status')->icon('heroicon-o-information-circle')->color('info')
                     ->action(function () {
@@ -471,26 +359,20 @@ class PemesananResource extends Resource
                         }
                         $totalPending = Pemesanan::where('penjual_id', $penjual->id)->where('status', 'pending')->sum('jumlah_pesanan');
                         $totalDisetujui = Pemesanan::where('penjual_id', $penjual->id)->where('status', 'disetujui')->sum('jumlah_pesanan');
-                        $totalSelesai = Pemesanan::where('penjual_id', $penjual->id)
-                            ->where('status', 'selesai')
+                        $totalSelesai = Pemesanan::where('penjual_id', $penjual->id)->where('status', 'selesai')
                             ->where(function($query) {
                                 $query->where('keterangan', 'not like', '%=== BARANG TELAH DIKONFIRMASI DITERIMA ===%')
                                       ->orWhereNull('keterangan');
-                            })
-                            ->count();
+                            })->count();
                         $maxPesanan = $penjual->kuota - $penjual->stok - $totalPending;
-                        
-                        Notification::make()
-                            ->title('Informasi Status Pemesanan')
+                        Notification::make()->title('Informasi Status Pemesanan')
                             ->body("Status profil: " . ucfirst($penjual->status) . 
                                    " | Kuota: {$penjual->kuota}" . 
                                    " | Stok: {$penjual->stok}" . 
                                    " | Pending: {$totalPending}" . 
                                    " | Disetujui: {$totalDisetujui}" . 
                                    " | Perlu konfirmasi: {$totalSelesai}" .
-                                   " | Bisa pesan: {$maxPesanan}")
-                            ->info()
-                            ->send();
+                                   " | Bisa pesan: {$maxPesanan}")->info()->send();
                     })
                     ->visible(function () {
                         $penjual = static::getAuthenticatedPenjual();
@@ -633,10 +515,8 @@ class PemesananResource extends Resource
                 default => null
             };
         }
-        
         $pendingCount = static::getModel()::where('penjual_id', $penjual->id)->where('status', 'pending')->count();
         $selesaiCount = static::getModel()::where('penjual_id', $penjual->id)->where('status', 'selesai')->count();
-        
         $tooltip = [];
         if ($pendingCount > 0) {
             $tooltip[] = "Pending: {$pendingCount}";
@@ -644,7 +524,6 @@ class PemesananResource extends Resource
         if ($selesaiCount > 0) {
             $tooltip[] = "Perlu konfirmasi: {$selesaiCount}";
         }
-        
         return !empty($tooltip) ? implode(' | ', $tooltip) : null;
     }
 }

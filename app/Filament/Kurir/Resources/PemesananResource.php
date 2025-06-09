@@ -109,73 +109,66 @@ class PemesananResource extends Resource
                 // Tables\Actions\ViewAction::make(),
                 Action::make('mulai_pengiriman')->label('Mulai Pengiriman')->icon('heroicon-o-play')->color('warning')->visible(fn (Pemesanan $record) => $record->status === 'disetujui')->requiresConfirmation()->modalHeading('Mulai Pengiriman')
                     ->modalDescription(fn (Pemesanan $record) => 
-                        "Apakah Anda siap memulai pengiriman ke {$record->penjual->user->name}?\n\n" .
-                        "Alamat: {$record->penjual->alamat}\n" .
-                        "Jumlah: {$record->jumlah_pesanan} tabung\n"
+                        "Apakah Anda siap memulai pengiriman?\n\n" .
+                        "👤 Penjual: {$record->penjual->user->name}\n" .
+                        "📍 Alamat: {$record->penjual->alamat}\n" .
+                        "📦 Jumlah: {$record->jumlah_pesanan} tabung\n"
                     )
                     ->action(function (Pemesanan $record) {
                         $record->update([
                             'status' => 'dalam_perjalanan',
                         ]);
-                        
-                        Notification::make()
-                            ->success()
-                            ->title('Pengiriman dimulai')
-                            ->body('Status pengiriman telah diubah menjadi "Dalam Perjalanan". Selamat bertugas!')
-                            ->send();
+                        Notification::make()->success()->title('Pengiriman dimulai')->body('Status pengiriman telah diubah menjadi "Dalam Perjalanan". Selamat bertugas!')->send();
                     }),
-                
-                    Action::make('selesai_pengiriman')
-                    ->label('Selesai')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn (Pemesanan $record) => $record->status === 'dalam_perjalanan')
-                    ->requiresConfirmation()
-                    ->modalHeading('Selesaikan Pengiriman')
-                    ->modalDescription(fn (Pemesanan $record) => 
-                        "Apakah pengiriman ke {$record->penjual->user->name} sudah selesai dan barang telah diserahkan?\n\n" .
-                        "Pastikan Anda sudah:\n" .
-                        "✓ Barang telah diserahkan ke penjual\n" .
-                        "✓ Penjual telah menerima barang\n" .
-                        "✓ Dokumen pengiriman telah ditandatangani (jika ada)\n\n" .
-                        "⚠️ Catatan: Stok akan ditambahkan setelah penjual mengkonfirmasi penerimaan barang."
-                    )
+                Action::make('selesai_pengiriman')->label('Selesai')->icon('heroicon-o-check-circle')->color('success')->visible(fn (Pemesanan $record) => $record->status === 'dalam_perjalanan')->requiresConfirmation()->modalHeading('Selesaikan Pengiriman')
                     ->form([
-                        Forms\Components\Textarea::make('catatan_pengiriman')
-                            ->label('Catatan Pengiriman (Opsional)')
-                            ->placeholder('Tambahkan catatan terkait pengiriman ini...')
-                            ->rows(3),
+                        Forms\Components\Section::make('Verifikasi Kode Pesanan')->description('Masukkan kode pesanan untuk mengkonfirmasi bahwa Anda telah menyelesaikan pengiriman yang benar.')
+                            ->schema([
+                                Forms\Components\TextInput::make('kode_pesanan_input')->label('Kode Pesanan')->placeholder('Masukkan kode pesanan...')->required()->helperText('Kode pesanan harus sesuai dengan yang tertera pada pesanan ini.')
+                                    ->rules([
+                                        function ($record) {
+                                            return function (string $attribute, $value, \Closure $fail) use ($record) {
+                                                if ($value !== $record->kode_pesanan) {
+                                                    $fail('Kode pesanan tidak sesuai. Pastikan Anda memasukkan kode yang benar.');
+                                                }
+                                            };
+                                        },
+                                    ])
+                                    ->validationAttribute('kode pesanan'),
+                            ]),
+                        Forms\Components\Section::make('Catatan Pengiriman')->description('Tambahkan catatan terkait pengiriman (opsional).')
+                            ->schema([
+                                Forms\Components\Textarea::make('catatan_pengiriman')->label('Catatan Pengiriman')->placeholder('Tambahkan catatan terkait pengiriman ini...')->rows(3),
+                            ]),
                     ])
                     ->action(function (Pemesanan $record, array $data) {
+                        if ($data['kode_pesanan_input'] !== $record->kode_pesanan) {
+                            Notification::make()->danger()->title('Kode Pesanan Salah')->body('Kode pesanan yang Anda masukkan tidak sesuai. Pengiriman tidak dapat diselesaikan.')->send();
+                            return;
+                        }
                         $updateData = [
                             'status' => 'selesai',
                         ];
-                        
+                        $keteranganKonfirmasi = "\n\n=== KONFIRMASI PENGIRIMAN SELESAI ===\n";
+                        $keteranganKonfirmasi .= "Kurir: " . Auth::user()->name . "\n";
+                        $keteranganKonfirmasi .= "Tanggal: " . now()->format('d/m/Y H:i:s') . "\n";
+                        $keteranganKonfirmasi .= "Kode pesanan dikonfirmasi: {$record->kode_pesanan}\n";
+                        $keteranganKonfirmasi .= "Status: Barang telah diserahkan\n";
                         if (isset($data['catatan_pengiriman']) && !empty($data['catatan_pengiriman'])) {
-                            $keteranganLama = $record->keterangan ?? '';
-                            $keteranganBaru = $keteranganLama 
-                                ? $keteranganLama . "\n\nCatatan Pengiriman: " . $data['catatan_pengiriman']
-                                : "Catatan Pengiriman: " . $data['catatan_pengiriman'];
-                            $updateData['keterangan'] = $keteranganBaru;
+                            $keteranganKonfirmasi .= "Catatan Pengiriman: " . $data['catatan_pengiriman'] . "\n";
                         }
-                        
+                        $keteranganKonfirmasi .= "=== MENUNGGU KONFIRMASI PENERIMAAN PENJUAL ===";
+                        $keteranganLama = $record->keterangan ?? '';
+                        $updateData['keterangan'] = $keteranganLama . $keteranganKonfirmasi;
                         $record->update($updateData);
-                        
                         if ($record->kurir) {
                             $record->kurir->update(['status' => 'tersedia']);
                         }
-                        
-                        Notification::make()
-                            ->success()
-                            ->title('Pengiriman selesai')
-                            ->body("Pengiriman telah selesai. Menunggu konfirmasi penerimaan dari penjual {$record->penjual->user->name}. Status Anda kembali tersedia untuk tugas berikutnya.")
-                            ->send();
+                        Notification::make()->success()->title('Pengiriman Berhasil Diselesaikan')->body("Pengiriman dengan kode {$record->kode_pesanan} telah selesai. Menunggu konfirmasi penerimaan dari penjual {$record->penjual->user->name}. Status Anda kembali tersedia untuk tugas berikutnya.")->send();
                     }),
             ])
             ->bulkActions([
-            ])
-            ->defaultSort('tanggal_pesanan', 'asc')
-            ->poll('30s');
+            ])->defaultSort('tanggal_pesanan', 'asc')->poll('30s');
     }
 
     public static function getRelations(): array
@@ -198,16 +191,11 @@ class PemesananResource extends Resource
             if (!$user) {
                 return null;
             }
-            
             $kurir = \App\Models\Kurir::where('user_id', $user->id)->first();
             if (!$kurir) {
                 return null;
             }
-            
-            $tugasAktif = static::getModel()::where('kurir_id', $kurir->id)
-                ->whereIn('status', ['disetujui', 'dalam_perjalanan'])
-                ->count();
-                
+            $tugasAktif = static::getModel()::where('kurir_id', $kurir->id)->whereIn('status', ['disetujui', 'dalam_perjalanan'])->count();
             return $tugasAktif > 0 ? (string) $tugasAktif : null;
         } catch (\Exception $e) {
             \Log::error('Navigation badge error: ' . $e->getMessage());
@@ -222,16 +210,11 @@ class PemesananResource extends Resource
             if (!$user) {
                 return null;
             }
-            
             $kurir = \App\Models\Kurir::where('user_id', $user->id)->first();
             if (!$kurir) {
                 return null;
             }
-            
-            $tugasAktif = static::getModel()::where('kurir_id', $kurir->id)
-                ->whereIn('status', ['disetujui', 'dalam_perjalanan'])
-                ->count();
-                
+            $tugasAktif = static::getModel()::where('kurir_id', $kurir->id)->whereIn('status', ['disetujui', 'dalam_perjalanan'])->count();
             return $tugasAktif > 0 ? 'warning' : null;
         } catch (\Exception $e) {
             \Log::error('Navigation badge color error: ' . $e->getMessage());
