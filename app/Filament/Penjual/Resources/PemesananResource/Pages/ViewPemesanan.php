@@ -13,8 +13,8 @@ class ViewPemesanan extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\EditAction::make()
-                ->visible(fn () => $this->record->status === 'pending'),
+            Actions\Action::make('back')->label('Kembali')->icon('heroicon-o-arrow-left')->color('gray')->url($this->getResource()::getUrl('index')),
+            Actions\EditAction::make()->visible(fn () => $this->record->status === 'pending'),
         ];
     }
 }

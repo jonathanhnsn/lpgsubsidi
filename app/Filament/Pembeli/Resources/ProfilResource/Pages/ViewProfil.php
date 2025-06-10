@@ -56,8 +56,8 @@ class ViewProfil extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\EditAction::make()
-                ->label('Edit Profil'),
+            Actions\Action::make('back')->label('Kembali')->icon('heroicon-o-arrow-left')->color('gray')->url($this->getResource()::getUrl('index')),
+            Actions\EditAction::make()->label('Edit Profil'),
         ];
     }
 }

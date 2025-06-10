@@ -99,6 +99,7 @@ class GasResource extends Resource
             'index' => Pages\ListGases::route('/'),
             'create' => Pages\CreateGas::route('/create'),
             'edit' => Pages\EditGas::route('/{record}/edit'),
+            'view' => Pages\ViewGas::route('/{record}'),
         ];
     }
 }

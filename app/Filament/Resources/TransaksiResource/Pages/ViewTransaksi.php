@@ -17,7 +17,7 @@ class ViewTransaksi extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Admin tidak memiliki action untuk edit
+            Actions\Action::make('back')->label('Kembali')->icon('heroicon-o-arrow-left')->color('gray')->url($this->getResource()::getUrl('index')),
         ];
     }
 
